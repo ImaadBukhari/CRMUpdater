@@ -1,0 +1,9 @@
+# backend/requirements.txt
+fastapi
+uvicorn
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+python-dotenv
+google-cloud-secret-manager  # Add this line

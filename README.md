@@ -193,7 +193,7 @@ gcloud secrets versions add gmail-token --data-file=token.json
 ### 4️⃣ Deploy to Cloud Run
 
 ```bash
-./infra/deploy.sh
+./deploy.sh
 ```
 
 ### 5️⃣ Set up Gmail watch renewal (Cloud Scheduler)

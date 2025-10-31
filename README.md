@@ -55,15 +55,14 @@ test_email_processing.py  # Local test harness
 ## Email Command Format
 
 - Must contain the phrase: `upload to affinity` (case-insensitive)
-- Companies should be on the same line as that phrase (before or around it). Examples:
-  - `Please upload to affinity: OpenAI, Anthropic, Scale AI`
+- Companies names should be before the phrase. Example:
   - `[OpenAI, Anthropic, Scale AI] upload to affinity`
 - Optional notes anywhere in the email using double quotes:
   - `Notes: "Some note text here"`
 
 Notes email body format sent to Affinity:
 ```
-{company_url}
+{company name}
 
 {note_text_and_optional_section_below}
 

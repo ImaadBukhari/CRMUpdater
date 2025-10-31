@@ -14,10 +14,11 @@ load_dotenv(dotenv_path=env_path, override=True)
 print(f"Loaded .env from: {env_path.resolve()}")
 print(f"GOOGLE_CLIENT_ID = {os.getenv('GOOGLE_CLIENT_ID')}")
 
-# Scopes: Gmail read/send + Drive file operations
+# Scopes: Gmail read/send/modify + Drive file operations
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/drive"
 ]

@@ -1,10 +1,11 @@
-# === infra/Dockerfile ===
+# === Dockerfile ===
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# Copy backend code into container
+# Copy entire project structure into container
 COPY backend /app/backend
+COPY infra /app/infra
 
 # Install dependencies
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt

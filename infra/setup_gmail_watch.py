@@ -10,7 +10,15 @@ PROJECT_ID = "crm-updater-475321"
 TOPIC_NAME = f"projects/{PROJECT_ID}/topics/gmail-topic"
 
 def get_gmail_service():
-    creds = Credentials.from_authorized_user_file("token.json", ["https://www.googleapis.com/auth/gmail.modify"])
+    # Try mounted secret file first (Cloud Run)
+    if os.path.exists("/secrets/token.json"):
+        token_path = "/secrets/token.json"
+    # Fall back to environment variable or local file
+    else:
+        token_path = os.getenv("TOKEN_PATH", "token.json")
+    
+    # Use scopes embedded in token.json (send/readonly/modify as granted)
+    creds = Credentials.from_authorized_user_file(token_path)
     return build("gmail", "v1", credentials=creds)
 
 def register_watch():

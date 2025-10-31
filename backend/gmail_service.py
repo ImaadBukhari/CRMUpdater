@@ -8,8 +8,8 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
 
-from backend.drive_service import upload_attachment_to_drive
-from backend.crm_service import upload_to_affinity
+from .drive_service import upload_attachment_to_drive
+from .crm_service import upload_to_affinity
 
 ALLOWED_MIME_TYPES = {
     "application/pdf",
@@ -28,9 +28,14 @@ EMAIL_NOTIFY = "imaad@wyldvc.com"
 
 def get_gmail_service():
     """Build a Gmail API client from stored credentials."""
-    token_path = os.getenv("TOKEN_PATH", "/token.json")
+    # Try mounted secret file first (Cloud Run)
+    if os.path.exists("/secrets/token.json"):
+        token_path = "/secrets/token.json"
+    # Fall back to environment variable (local development)
+    else:
+        token_path = os.getenv("TOKEN_PATH", "token.json")
     
-    # If running in Cloud Run, try to get from Secret Manager
+    # If still not found, try Secret Manager as last resort
     if not os.path.exists(token_path):
         try:
             from google.cloud import secretmanager
@@ -144,9 +149,13 @@ def parse_email_body(text: str):
 
 def send_error_email(error_msg, original_body):
     """Send an alert email to Imaad if parsing fails."""
-    token_path = os.getenv("TOKEN_PATH", "/token.json")
-    if not os.path.exists(token_path):
+    # Use same token path logic as get_gmail_service
+    if os.path.exists("/secrets/token.json"):
+        token_path = "/secrets/token.json"
+    elif os.path.exists("/tmp/token.json"):
         token_path = "/tmp/token.json"
+    else:
+        token_path = os.getenv("TOKEN_PATH", "token.json")
 
     creds = Credentials.from_authorized_user_file(token_path)
     service = build("gmail", "v1", credentials=creds)

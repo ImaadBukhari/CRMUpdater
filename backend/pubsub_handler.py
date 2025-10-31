@@ -1,7 +1,7 @@
 # backend/pubsub_handler.py
 import base64
 import json
-from backend.gmail_service import process_gmail_message
+from .gmail_service import process_gmail_message
 
 async def handle_pubsub_message(envelope: dict):
     """Handles the Pub/Sub message, triggered by Gmail watch events."""

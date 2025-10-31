@@ -1,7 +1,7 @@
 # === infra/cloudbuild.yaml ===
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/crm-updater', '-f', 'infra/Dockerfile', '.']
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/crm-updater', '.']
 
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/crm-updater']

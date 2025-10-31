@@ -26,7 +26,7 @@ async def pubsub_webhook(request: Request):
             print("❌ Invalid format:", envelope)
             raise HTTPException(status_code=400, detail="Invalid Pub/Sub message format")
 
-        from backend.pubsub_handler import handle_pubsub_message
+        from .pubsub_handler import handle_pubsub_message
         await handle_pubsub_message(envelope)
 
         print("✅ Pub/Sub message handled successfully")

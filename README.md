@@ -1,171 +1,233 @@
-# CRMUpdater
+# CRM Updater
 
-Automates adding companies to Affinity via their email bots (no Affinity API calls) using:
-- Gmail ingestion (attachments → Drive, parse email body)
-- Perplexity to resolve a company's website URL
-- Affinity list and notes email bots to add to lists and attach notes
-- Cloud Run + Cloud Scheduler for hosted operation
+An event-driven automation that monitors incoming Gmail messages for specific instructions, extracts company names, notes, and attachments, and automatically updates the Wyld VC Affinity CRM.  
+It seamlessly connects Gmail → Google Drive → Affinity to create notes and upload files without manual intervention.
 
-## High-level Flow
-1. A Gmail message arrives (manually or via watch). Attachments are uploaded to Google Drive.
-2. The email body is parsed for a command and optional notes.
-3. For each company name, Perplexity returns a website URL.
-4. Two emails are sent to Affinity bots per company:
-   - List add: `lists+wyldvc+315335@affinity.co` (body: company URL)
-   - Notes: `notes+wyldvc@affinity.co` (body: URL, blank line, note + Drive links)
+---
 
-## Repository Structure
+## 🌟 Overview
+
+**CRM Updater** listens for new emails in your Gmail inbox and reacts whenever an email contains phrases like  
+`upload to Affinity`.  
+
+When detected, it automatically:
+1. Extracts company names and any associated notes from the email body.  
+2. Uploads valid attachments (PDFs, Word, PowerPoint) to Google Drive and sets domain-wide access.  
+3. Checks whether the company exists in the target Affinity list (ID `315335`).  
+4. Creates notes and file links for each company accordingly.
+
+This automation runs entirely serverlessly on **Google Cloud Run**, with **Gmail Push Notifications via Pub/Sub**, and stays active through a daily **Cloud Scheduler refresh**.
+
+---
+
+## 🎯 Key Features
+
+- **Automatic Gmail Parsing** — Listens for specific email commands (`upload to affinity`)  
+- **Attachment Uploads** — Uploads valid document types to Google Drive and generates shareable links  
+- **CRM Syncing** — Updates or creates company records and notes in Affinity automatically  
+- **Error Notifications** — Emails you (`imaad@wyldvc.com`) if parsing or uploads fail  
+- **Fully Serverless** — Runs continuously using Cloud Run, Pub/Sub, and Cloud Scheduler  
+- **Secure Token Handling** — Stores Gmail OAuth tokens in Secret Manager, never in source control  
+
+---
+
+## 🏗️ Architecture
+
 ```
-backend/
-  main.py                # FastAPI app (/refresh_watch, /pubsub)
-  gmail_service.py       # Gmail client, parsing, Drive upload, orchestrator entry
-  crm_service.py         # Perplexity + Affinity email bot sending (core logic)
-  drive_service.py       # Upload attachment bytes to Drive (link returned)
-  pubsub_handler.py      # Pub/Sub push handler for Gmail watch notifications
-  requirements.txt
-infra/
-  setup_gmail_watch.py   # Registers Gmail watch (HTTP target to Pub/Sub topic)
-  token_generator.py     # Generates token.json with proper OAuth scopes
-  cloudbuild.yaml        # Optional: Cloud Build pipeline (not required)
-Dockerfile               # Container runtime for Cloud Run
-deploy.sh                # Build + deploy to Cloud Run with secrets
-test_email_processing.py # Simple local test harness
+┌─────────────────┐
+│  Gmail Inbox    │ ← Email with "upload to Affinity"
+└────────┬────────┘
+         │ Push Notification
+         ▼
+┌─────────────────┐
+│  Pub/Sub Topic  │ ← gmail-topic
+└────────┬────────┘
+         │ Webhook
+         ▼
+┌─────────────────┐
+│  Cloud Run      │ ← FastAPI Backend
+│  /pubsub        │
+└────────┬────────┘
+         │
+    ┌────┴─────┬──────────┬───────────┐
+    ▼          ▼          ▼           ▼
+┌────────┐ ┌──────┐ ┌──────────┐ ┌────────┐
+│ Gmail  │ │Drive │ │ Secret   │ │Affinity│
+│  API   │ │ API  │ │ Manager  │ │  CRM   │
+└────────┘ └──────┘ └──────────┘ └────────┘
+         ▲
+         │ Daily (4 AM)
+    ┌────┴────────┐
+    │   Cloud     │
+    │ Scheduler   │
+    └─────────────┘
 ```
 
-## Email Command Format (what the parser expects)
-- Trigger phrase (case-insensitive) must appear in a line: `upload to affinity`
-- Companies must appear on the same line, before or around the phrase. Examples:
-  - `Please upload to affinity: OpenAI, Anthropic, Scale AI`
-  - `[OpenAI, Anthropic, Scale AI] upload to affinity`
-- Optional notes anywhere in the email, captured with double quotes:
-  - `Notes: "Some note text here"`
+### 🔄 Flow Summary
 
-Notes formatting sent to Affinity notes bot:
+1. Gmail sends a push event to the Pub/Sub topic when a new email arrives.  
+2. Pub/Sub triggers the `/pubsub` endpoint on Cloud Run.  
+3. The backend fetches the message, decodes attachments, and parses the body.  
+4. Valid attachments are uploaded to Drive and made shareable.  
+5. Company and note data are posted to the Affinity CRM via API.  
+6. Any issues trigger an error email notification to `imaad@wyldvc.com`.
+
+---
+
+## 📁 Project Structure
+
 ```
-{company_url}
-
-{note_text}
-
-Attachments:
-{drive_link_1}
-{drive_link_2}
+CRMUpdater/
+├── backend/                    # FastAPI backend application
+│   ├── main.py                # Main API endpoints and Pub/Sub webhook
+│   ├── gmail_service.py       # Gmail API integration and parsing
+│   ├── drive_service.py       # Google Drive upload and permissions
+│   ├── crm_service.py         # Affinity CRM integration
+│   ├── pubsub_handler.py      # Pub/Sub notification processing
+│   └── requirements.txt       # Python dependencies
+│
+├── infra/                     # Infrastructure and deployment
+│   ├── Dockerfile            # Container configuration
+│   ├── cloudbuild.yaml       # Cloud Build pipeline
+│   ├── deploy.sh             # Deployment script
+│   ├── setup_gmail_watch.py  # Gmail watch registration
+│   └── token_generator.py    # OAuth token generator
+│
+├── .env                       # Environment variables (not committed)
+├── .gitignore                # Git ignore rules
+└── README.md                 # This file
 ```
 
-## Perplexity Integration
-- API endpoint: `https://api.perplexity.ai/chat/completions`
-- Model: `sonar`
-- Request parameters: `return_citations: false`, `return_images: false`
-- Prompt: `What is the domain for {company} startup. Return only the site in full https format`
-- Post-processing: trailing citations/punctuation are stripped; the token is trimmed.
+---
 
-Configuration source (priority):
-1. Cloud Run secret injected as env var `PERPLEXITY_API_KEY`
-2. Local `.env` for development
+## 🔑 Key Files Explained
 
-## OAuth Token (token.json) and Scopes
-Generated once using `infra/token_generator.py` and stored as a Secret Manager secret (`gmail-token`).
+### `backend/main.py`
 
-Requested scopes (recommended):
-- Gmail: `gmail.readonly`, `gmail.send`, `gmail.modify`
-- Drive: `drive.file`, `drive`
+Defines the FastAPI application and `/pubsub` webhook:
+- Receives Gmail Pub/Sub events  
+- Parses message envelopes  
+- Calls `handle_pubsub_message()` to process new emails  
+- Returns health responses for Cloud Run logs  
 
-The app loads the token from (in order):
-1. Cloud Run secret mounted at `/secrets/token.json`
-2. Local `TOKEN_PATH` env or `token.json` in repo
-3. Secret Manager fallback (server-side only)
+### `backend/gmail_service.py`
 
-## Local Development
-1. Python deps
-   ```bash
-   pip install -r backend/requirements.txt
-   ```
+Handles:
+- Gmail authentication (`token.json` or Secret Manager)
+- Email parsing and validation
+- Detecting "upload to affinity" triggers
+- Extracting companies, notes, and attachments
+- Sending error notifications when parsing fails  
 
-2. .env
-   ```env
-   PERPLEXITY_API_KEY=your_api_key
-   GOOGLE_CLIENT_ID=...
-   GOOGLE_CLIENT_SECRET=...
-   ```
+**Important:**  
+The Gmail watch expires daily, so Cloud Scheduler re-runs `setup_gmail_watch.py` to renew it.
 
-3. Generate token.json (first time only)
-   ```bash
-   python infra/token_generator.py
-   ```
+### `backend/drive_service.py`
 
-4. Run FastAPI locally
-   ```bash
-   uvicorn backend.main:app --reload --port 8000
-   # Endpoints: /refresh_watch, /pubsub
-   ```
+Handles Google Drive file uploads:
+- Uploads attachments from Gmail (PDF, DOCX, PPTX)
+- Skips invalid MIME types (e.g. PNG, JPG)
+- Applies domain-wide read access (`wyldvc.com`)
+- Returns shareable Drive links  
 
-5. Quick test without Gmail
-   ```bash
-   python test_email_processing.py
-   ```
+### `backend/crm_service.py`
 
-## Deployment (Cloud Run)
-Requirements:
-- Secrets in Secret Manager:
-  - `gmail-token` (contents of token.json)
-  - `perplexity-api-key` (value only; add via printf to avoid newline)
-    ```bash
-    printf '%s' 'pplx-...' | gcloud secrets versions add perplexity-api-key --data-file=- --project=$PROJECT_ID
-    ```
+Communicates with Affinity:
+- Searches companies by name  
+- Adds missing companies to list `315335`  
+- Appends notes and Drive links to existing records  
 
-Deploy:
+### `backend/pubsub_handler.py`
+
+Processes Pub/Sub notifications and calls Gmail processing with the correct `historyId`.
+
+### `infra/setup_gmail_watch.py`
+
+Registers the Gmail → Pub/Sub watch:
+- Defines which labels to monitor (`INBOX`)  
+- Pushes to the `gmail-topic` Pub/Sub topic  
+- Should be called once daily via Cloud Scheduler  
+
+### `infra/token_generator.py`
+
+Performs one-time local OAuth authorization using the client ID and secret from `.env`, generating a `token.json` containing the refresh and access tokens. This file is later uploaded to Secret Manager for secure use in production.
+
+### `infra/Dockerfile`
+
+Defines a minimal Python 3.12 container image that installs dependencies, exposes port 8080, and runs the FastAPI service.
+
+### `infra/cloudbuild.yaml`
+
+Automates the build-and-deploy pipeline on Google Cloud Build.
+
+### `infra/deploy.sh`
+
+Builds and deploys to Cloud Run:
+- Builds the image with Cloud Build  
+- Sets the secret mount for `token.json`  
+- Deploys to the specified region (`us-central1`)  
+
+---
+
+## 🚀 Deployment Instructions
+
+### 1️⃣ Enable required APIs
+
+```bash
+gcloud services enable gmail.googleapis.com drive.googleapis.com pubsub.googleapis.com run.googleapis.com secretmanager.googleapis.com cloudscheduler.googleapis.com cloudbuild.googleapis.com
+```
+
+### 2️⃣ Generate OAuth token locally
+
+```bash
+python infra/token_generator.py
+```
+
+### 3️⃣ Upload token to Secret Manager
+
+```bash
+gcloud secrets create gmail-token --replication-policy=automatic
+gcloud secrets versions add gmail-token --data-file=token.json
+```
+
+### 4️⃣ Deploy to Cloud Run
+
 ```bash
 ./deploy.sh
 ```
 
-What deploy.sh does:
-- Builds container
-- Ensures `PERPLEXITY_API_KEY` is not set as a plain env var
-- Sets secrets:
-  - Env var: `PERPLEXITY_API_KEY=perplexity-api-key:latest`
-  - File: `/secrets/token.json=gmail-token:latest`
-- Sets `GCP_PROJECT`
+### 5️⃣ Set up Gmail watch renewal (Cloud Scheduler)
 
-## Cloud Scheduler (refresh Gmail watch)
-Target endpoint: `GET /refresh_watch`
-
-Create a daily job (example midnight UTC):
 ```bash
-SERVICE_URL=$(gcloud run services describe crm-updater-backend \
-  --region us-central1 --format='value(status.url)')
-SERVICE_ACC=crm-updater-sa@crm-updater-475321.iam.gserviceaccount.com
-
-gcloud run services add-iam-policy-binding crm-updater-backend \
-  --region us-central1 \
-  --member serviceAccount:$SERVICE_ACC \
-  --role roles/run.invoker
-
-gcloud scheduler jobs create http refresh-gmail-watch \
-  --schedule="0 0 * * *" \
-  --time-zone="Etc/UTC" \
-  --uri="$SERVICE_URL/refresh_watch" \
+gcloud scheduler jobs create http gmail-watch-refresh \
+  --schedule="0 4 * * *" \
+  --uri="https://crm-updater-backend-<your-region>.a.run.app/refresh_watch" \
   --http-method=GET \
-  --oidc-service-account-email="$SERVICE_ACC" \
-  --location=us-central1
+  --oidc-service-account-email=crm-updater-sa@crm-updater-475321.iam.gserviceaccount.com
 ```
-
-Manual trigger:
-```bash
-TOKEN=$(gcloud auth print-identity-token)
-SERVICE_URL=$(gcloud run services describe crm-updater-backend --region us-central1 --format='value(status.url)')
-curl -sS -H "Authorization: Bearer $TOKEN" "$SERVICE_URL/refresh_watch"
-```
-
-## Troubleshooting
-- 401 from Perplexity: ensure `PERPLEXITY_API_KEY` is set from secret (Cloud Run → Revisions → Variables & Secrets) and has no trailing newline. Prefer adding with `printf`.
-- `invalid_scope`: regenerate `token.json` with the listed scopes or remove explicit scopes from code paths and rely on token’s embedded scopes.
-- "No module named 'infra'": ensure Dockerfile copies `infra/` and both `backend/` and `infra/` have `__init__.py`.
-- Cloud Run deploy arg errors: only one of `--set-env-vars`, `--remove-env-vars`, etc., per command. The provided `deploy.sh` sequences these correctly.
-
-## Security Notes
-- No Affinity API token is used; interaction is via Affinity email bot addresses.
-- Secrets are sourced from Secret Manager at deploy/runtime and not committed.
 
 ---
-Maintainer tips:
-- Prefer a single orchestration path: `backend.crm_service.upload_to_affinity()` for batch actions.
-- For local end-to-end testing without Gmail, use `test_email_processing.py`.
+
+## 📧 Email Format
+
+Each email is treated as a structured instruction set:
+- **Text before "upload to Affinity"** specifies the company or companies  
+- **"notes:"** defines the text to attach  
+- **Attachments** provide supplemental files (PDFs, Word, PowerPoint)
+
+Invalid formats trigger automatic error notifications to `imaad@wyldvc.com`.
+
+---
+
+## 🔐 Security
+
+- OAuth credentials retrieved from local `token.json` or Google Secret Manager
+- Gmail token secret mounted in Cloud Run
+- Domain-wide sharing permissions set to `wyldvc.com`
+- `.env` and `token.json` excluded from version control via `.gitignore`
+
+---
+
+## 📝 Architecture Details
+
+The system's architecture links Gmail → Pub/Sub → Cloud Run → Drive → Affinity, with Secret Manager handling secure credential access. Cloud Scheduler triggers `setup_gmail_watch.py` daily to renew Gmail's watch (which expires roughly every 24 hours). This design ensures continuous, event-driven CRM updates without manual logins, safely bridging email workflows, file management, and CRM synchronization in a fully automated cloud-native stack.

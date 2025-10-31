@@ -163,7 +163,7 @@ Target: `GET /refresh_watch`
 ```bash
 SERVICE_URL=$(gcloud run services describe crm-updater-backend \
   --region us-central1 --format='value(status.url)')
-SERVICE_ACC=crm-updater-sa@crm-updater-475321.iam.gserviceaccount.com
+SERVICE_ACC=your-service-account-address
 
 gcloud run services add-iam-policy-binding crm-updater-backend \
   --region us-central1 \
